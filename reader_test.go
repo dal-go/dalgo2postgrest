@@ -151,6 +151,173 @@ func TestTypedRecordTemplate(t *testing.T) {
 	}
 }
 
+func TestRecordsReaderRechecksTerminalStateAfterBuildingRows(t *testing.T) {
+	t.Run("IntoRecord callback cancels the context", func(t *testing.T) {
+		server := newTestDB(t, jsonRows(`[{"id":2,"title":"two"},{"id":1,"title":"one"}]`))
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		query := dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(2).
+			SelectIntoRecord(func() record.Record {
+				cancel()
+				return record.NewRecordWithData(record.NewKeyWithID("items", int64(0)), map[string]any{})
+			})
+		reader, err := server.db.ExecuteQueryToRecordsReader(ctx, query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 2; i++ {
+			rec, nextErr := reader.Next()
+			if rec != nil {
+				t.Fatalf("Next returned a record after the callback aborted the read: %#v", rec)
+			}
+			if !errors.Is(nextErr, context.Canceled) {
+				t.Fatalf("Next %d = %v, want context.Canceled", i+1, nextErr)
+			}
+		}
+		if got := server.hits.Load(); got != 1 {
+			t.Fatalf("requests = %d, want 1; a row built before cancellation caused another request", got)
+		}
+		_ = reader.Close()
+	})
+
+	t.Run("IntoRecord callback closes the database", func(t *testing.T) {
+		server := newTestDB(t, jsonRows(`[{"id":2,"title":"two"},{"id":1,"title":"one"}]`))
+		query := dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(2).
+			SelectIntoRecord(func() record.Record {
+				if err := server.db.Close(); err != nil {
+					t.Errorf("Close: %v", err)
+				}
+				return record.NewRecordWithData(record.NewKeyWithID("items", int64(0)), map[string]any{})
+			})
+		reader, err := server.db.ExecuteQueryToRecordsReader(context.Background(), query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 2; i++ {
+			rec, nextErr := reader.Next()
+			if rec != nil {
+				t.Fatalf("Next returned a record after the callback closed the database: %#v", rec)
+			}
+			if !errors.Is(nextErr, ErrClosed) {
+				t.Fatalf("Next %d = %v, want ErrClosed", i+1, nextErr)
+			}
+		}
+		if got := server.hits.Load(); got != 1 {
+			t.Fatalf("requests = %d, want 1; a row built before close caused another request", got)
+		}
+		_ = reader.Close()
+	})
+}
+
+func TestRecordsProjectionHonorsDeclaredOutputs(t *testing.T) {
+	titleOnly := func() dal.Query {
+		return dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(1).
+			SelectColumns(dal.Column{Expression: dal.Field("title")})
+	}
+	aliasAndHiddenID := func() dal.Query {
+		return dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(1).
+			SelectColumns(
+				dal.Column{Expression: dal.Field("title")},
+				dal.Column{Alias: "q", Expression: dal.Field("qty")},
+			)
+	}
+	keysOnly := func() dal.Query {
+		return dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(1).
+			SelectKeysOnly(reflect.Int64)
+	}
+	wildcard := func() dal.Query {
+		return dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(1).
+			SelectIntoRecord(nil)
+	}
+	for _, test := range []struct {
+		name        string
+		query       dal.Query
+		selectValue string
+		body        string
+		wantKey     any
+		wantData    map[string]any
+	}{
+		{
+			name:        "title only keeps neither hidden id nor unexpected field",
+			query:       titleOnly(),
+			selectValue: "title,id",
+			body:        `[{"id":7,"title":"seven","unexpected":"leak"}]`,
+			wantKey:     int64(7),
+			wantData:    map[string]any{"title": "seven"},
+		},
+		{
+			name:        "alias and hidden id keep only declared outputs",
+			query:       aliasAndHiddenID(),
+			selectValue: "title,q:qty,id",
+			body:        `[{"id":7,"title":"seven","q":5,"unexpected":"leak"}]`,
+			wantKey:     int64(7),
+			wantData:    map[string]any{"title": "seven", "q": int64(5)},
+		},
+		{
+			name:        "id only keeps only the id",
+			query:       keysOnly(),
+			selectValue: "id",
+			body:        `[{"id":7,"title":"seven","unexpected":"leak"}]`,
+			wantKey:     int64(7),
+			wantData:    map[string]any{"id": int64(7)},
+		},
+		{
+			name:        "wildcard keeps every response field",
+			query:       wildcard(),
+			selectValue: "*",
+			body:        `[{"id":7,"title":"seven","extra":"kept"}]`,
+			wantKey:     int64(7),
+			wantData:    map[string]any{"id": int64(7), "title": "seven", "extra": "kept"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := newTestDB(t, func(w http.ResponseWriter, r *http.Request) {
+				if got := r.URL.Query().Get("select"); got != test.selectValue {
+					t.Errorf("select = %q, want %q", got, test.selectValue)
+				}
+				writeJSON(w, test.body)
+			})
+			reader, err := server.db.ExecuteQueryToRecordsReader(context.Background(), test.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			records := consumeRecords(t, reader)
+			if len(records) != 1 {
+				t.Fatalf("records = %d, want 1", len(records))
+			}
+			if got := records[0].Key().ID; !reflect.DeepEqual(got, test.wantKey) {
+				t.Fatalf("key id = %#v (%T), want %#v", got, got, test.wantKey)
+			}
+			data, ok := records[0].Data().(map[string]any)
+			if !ok {
+				t.Fatalf("data type = %T", records[0].Data())
+			}
+			if !reflect.DeepEqual(data, test.wantData) {
+				t.Fatalf("data = %#v, want %#v", data, test.wantData)
+			}
+		})
+	}
+}
+
+func TestRecordsProjectionRejectsMissingDeclaredColumn(t *testing.T) {
+	server := newTestDB(t, jsonRows(`[{"id":7,"unexpected":"leak"}]`))
+	query := dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(1).
+		SelectColumns(dal.Column{Expression: dal.Field("title")})
+	reader, err := server.db.ExecuteQueryToRecordsReader(context.Background(), query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		rec, nextErr := reader.Next()
+		if rec != nil {
+			t.Fatalf("Next returned a record for a response without the declared title: %#v", rec)
+		}
+		if !errors.Is(nextErr, ErrInvalidResponse) {
+			t.Fatalf("Next %d = %v, want ErrInvalidResponse", i+1, nextErr)
+		}
+	}
+}
+
 func TestNumericValuesAreNotCoercedThroughFloat64(t *testing.T) {
 	server := newTestDB(t, func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, `[{

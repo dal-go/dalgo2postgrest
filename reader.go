@@ -181,13 +181,16 @@ func (r *recordsReader) Next() (record.Record, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
-	// Check before every returned row, not only when a page is fetched. Rows
+	// Recheck before every returned row, not only before a page is fetched. Rows
 	// already buffered from an earlier page must not outlive a caller abort, a
-	// closed database or an expired operation deadline.
-	if err := r.terminalError(); err != nil {
-		return r.fail(err)
-	}
+	// closed database or an expired operation deadline. The check also runs
+	// after a page has been built: building a row invokes the caller's
+	// IntoRecord callback, which may cancel the context or close the database
+	// itself.
 	for {
+		if err := r.terminalError(); err != nil {
+			return r.fail(err)
+		}
 		if r.index < len(r.rows) {
 			rec := r.rows[r.index]
 			r.index++
@@ -246,26 +249,48 @@ func (r *recordsReader) buildRecord(row map[string]any) (record.Record, error) {
 	if !comparableValue(id) {
 		return nil, fmt.Errorf("%w: response row id is not a comparable scalar", ErrInvalidResponse)
 	}
-	if !r.pager.plan.idRequested {
-		delete(row, r.pager.db.cfg.idColumn)
+	data, err := r.pager.plan.projectRow(row)
+	if err != nil {
+		return nil, err
 	}
 	key := record.NewKeyWithID(r.pager.plan.collection, id)
 	if r.pager.plan.template == nil {
-		return record.NewRecordWithData(key, row), nil
+		return record.NewRecordWithData(key, data), nil
 	}
 	template := r.pager.plan.template()
 	if template == nil {
-		return record.NewRecordWithData(key, row), nil
+		return record.NewRecordWithData(key, data), nil
 	}
 	template.SetError(nil)
 	target := template.Data()
 	if target == nil {
-		return record.NewRecordWithData(key, row), nil
+		return record.NewRecordWithData(key, data), nil
 	}
-	if err := record.MapToData(target, row); err != nil {
+	if err = record.MapToData(target, data); err != nil {
 		return nil, err
 	}
 	return record.NewRecordWithData(key, target), nil
+}
+
+// projectRow restricts a response row to the output columns the query declared.
+// A wildcard plan (projected == nil) keeps the whole response row. An explicit
+// projection is honored exactly: an extra response field must not leak into the
+// record's data, and a declared field missing from the response is a protocol
+// violation rather than a silently dropped column. The hidden id column added
+// for the record key is not part of projected, so it never leaks either.
+func (p queryPlan) projectRow(row map[string]any) (map[string]any, error) {
+	if p.projected == nil {
+		return row, nil
+	}
+	data := make(map[string]any, len(p.projected))
+	for _, name := range p.projected {
+		value, found := row[name]
+		if !found {
+			return nil, fmt.Errorf("%w: response row is missing the projected column %q", ErrInvalidResponse, name)
+		}
+		data[name] = value
+	}
+	return data, nil
 }
 
 func (r *recordsReader) Cursor() (string, error) {

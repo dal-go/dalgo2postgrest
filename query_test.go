@@ -329,7 +329,9 @@ func TestProjectionWildcardMixingAndAliases(t *testing.T) {
 			var query url.Values
 			server := newTestDB(t, func(w http.ResponseWriter, r *http.Request) {
 				query = r.URL.Query()
-				writeJSON(w, `[{"id":1,"title":"one","qty":10}]`)
+				// PostgREST returns the output name of an aliased projection
+				// ("q:qty" arrives as "q"), which the adapter now enforces.
+				writeJSON(w, `[{"id":1,"title":"one","q":10}]`)
 			})
 			reader, err := server.db.ExecuteQueryToRecordsReader(context.Background(), test.query)
 			if err != nil {
