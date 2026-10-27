@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+    ports:
+      - "${POSTGRES_PORT:?POSTGRES_PORT is required}:5432"
+    volumes:
+      - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d appdb"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
+  postgrest:
+    image: postgrest/postgrest:v16.5
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:authenticator-pass@postgres:5432/appdb
+      PGRST_DB_SCHEMAS: app
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: integration-test-secret-that-is-long-enough
+      PGRST_DB_EXTRA_SEARCH_PATH: app
+      # Deliberately below the adapter's default MaxPageSize (200). The adapter
+      # must continue from Content-Range instead of treating a short page as EOF.
+      PGRST_DB_MAX_ROWS: "3"
+    ports:
+      - "${POSTGREST_PORT:?POSTGREST_PORT is required}:3000"

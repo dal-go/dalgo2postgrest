@@ -1,0 +1,41 @@
+name: Go CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test, race and vet
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test
+        run: go test -race -count=1 ./...
+      - name: Vet
+        run: go vet ./...
+
+  # Version bumping and tagging are intentionally not enabled in this new
+  # repository. The fleet release workflow is added by the repository owner
+  # after an exact-head review; this CI never publishes a tag by itself.
+  integration:
+    name: Real PostgREST v16.5
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Disposable PostgreSQL 17 + PostgREST v16.5
+        run: ./scripts/integration.sh
