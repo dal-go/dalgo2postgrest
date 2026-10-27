@@ -6,7 +6,7 @@ application tables and views through PostgREST's HTTP API, including Supabase's
 `/rest/v1` endpoint. It does not speak the PostgreSQL wire protocol, does not
 create a DALgo storage layout, and never writes.
 
-Tested against **PostgREST v16.5** with **PostgreSQL 17**. CI runs the adapter
+Tested against **PostgREST v16.5** with **PostgreSQL 18**. CI runs the adapter
 against that real pair on every push and pull request.
 
 ## Security and credentials
@@ -299,7 +299,7 @@ go test -race -count=1 ./...
 go vet ./...
 ```
 
-The opt-in real-service suite starts a disposable PostgreSQL 17 + PostgREST
+The opt-in real-service suite starts a disposable PostgreSQL 18 + PostgREST
 v16.5 Compose project with random loopback ports and a unique Compose project
 name, seeds application rows through PostgreSQL's init hook, exercises rows,
 filters, ordering, paging, recordsets, metadata and auth failures, then removes
