@@ -147,7 +147,9 @@ found, err := db.Exists(ctx, record.NewKeyWithID("items", int64(1)))
 row, including the configured ID column. `GetMulti` is a sequential loop under
 one deadline and one shared response-byte budget; a missing record is left with
 a not-found error and does not stop the other reads. At most
-`MaxGetManyKeys` records are accepted.
+`MaxGetManyKeys` records are accepted. An `IDColumn` named like a PostgREST
+control (`limit`, `offset`, `select`, ...) is quoted in the equality predicate
+instead of overwriting that control.
 
 ## Supported query surface
 
@@ -162,8 +164,16 @@ a not-found error and does not stop the other reads. At most
 | Ordering | Plain ascending/descending fields. The configured ID column is appended as `id.asc` unless the caller already orders by it, so offset pagination has a stable tie-breaker. |
 | Paging | `offset` and `limit`. A positive limit is required; pages never exceed `MaxPageSize`, `MaxRows`, `MaxRequests` or the total response-byte budget. A short page is verified with `Content-Range` and continuation rather than assumed to be EOF. |
 | Records | Numeric keys and string keys are preserved. JSON integers that fit `int64` become `int64`. Decimals, exponents and integers beyond `int64` stay `json.Number`, so no digits pass through `float64`. |
-| Recordsets | A materialized columnar recordset. Explicit projections keep their column order; a wildcard derives sorted column names. Array/object values and decimals remain native JSON values. |
+| Recordsets | A materialized columnar recordset. Explicit projections keep their column order and enforce the same declared-output contract as records: a declared column missing from the response is `ErrInvalidResponse`, while an explicit JSON `null` stays `nil`. A wildcard derives sorted column names. Array/object values and decimals remain native JSON values. |
 | Not queried | No `Prefer: count=exact`, no hidden count, no RPC, no resource embedding, no full-text search and no server-side aggregation. |
+
+PostgREST reserves the query parameters `select`, `columns`, `on_conflict`,
+`order`, `limit`, `offset`, `and` and `or`. A physical column with one of those
+exact names remains usable: filter keys and the equality predicate of a
+reserved `IDColumn` are double-quoted with PostgREST's official identifier
+quoting (for example `?"limit"=eq.10`), so a constraint is never silently
+consumed as a control. The same quoting is used inside nested `AND`/`OR`
+expressions.
 
 Unsupported operations wrap `dal.ErrNotSupported` and are refused **before any
 HTTP request**: joins, aggregates, `GROUP BY`, `HAVING`, subqueries, cursors,
@@ -255,6 +265,14 @@ PostgREST OpenAPI document at the API root. The same header provider and
   as record identities.
 - Relation, field and alias names must be simple ASCII SQL identifiers. Metadata
   can still list a relation whose name a query would refuse.
+- A column whose name is a PostgREST control (`limit`, `offset`, `select`,
+  `order`, `or`, ...) is targeted with quoted filter keys. This is verified
+  against PostgREST v16.5; a server or proxy that rewrites or rejects quoted
+  query keys fails the read instead of silently dropping the predicate.
+- Explicit projections are exact for both records and recordsets: every declared
+  output column must be present in the response. An explicit JSON `null` is a
+  present value and stays `nil`; a missing column fails with
+  `ErrInvalidResponse`.
 - PostgREST's own `db-max-rows` may cap a page below the requested `MaxPageSize`.
   The adapter continues with Content-Range-aware paging and needs enough
   `MaxRequests` to cover the resulting pages; if the budget is too small the
@@ -288,7 +306,10 @@ filters, ordering, paging, recordsets, metadata and auth failures, then removes
 its containers and volume. The fixture sets `db-max-rows=3` (below the adapter's
 default `MaxPageSize`) and seeds distinct empty-string, NULL and non-null values
 in `app.labels`, so the real server proves both pagination continuation and
-NULL/empty-string separation.
+NULL/empty-string separation. It also seeds `app.reserved_words` and
+`app.reserved_ids`, whose column names are PostgREST controls (`limit`,
+`offset`, `select`, `order`, `or`, ...), to prove the quoted filters and the
+reserved `IDColumn` point reads against the real service.
 
 ```sh
 ./scripts/integration.sh

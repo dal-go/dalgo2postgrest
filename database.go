@@ -182,7 +182,7 @@ func (b *backend) Exists(ctx context.Context, key *record.Key) (bool, error) {
 	params := url.Values{}
 	params.Set("select", b.db.cfg.idColumn)
 	params.Set("limit", "1")
-	params.Set(b.db.cfg.idColumn, "eq."+literal)
+	params.Set(postgrestFieldKey(b.db.cfg.idColumn), "eq."+literal)
 	body, err := b.db.getBytes(opCtx, "exists", b.db.relationURL(key.Collection(), params), "application/json", b.db.cfg.maxResponseBytes)
 	if err != nil {
 		return false, err
@@ -269,7 +269,7 @@ func (b *backend) fetchOne(ctx context.Context, collection, literal string, budg
 	params := url.Values{}
 	params.Set("select", "*")
 	params.Set("limit", "1")
-	params.Set(b.db.cfg.idColumn, "eq."+literal)
+	params.Set(postgrestFieldKey(b.db.cfg.idColumn), "eq."+literal)
 	body, err := b.db.getBytes(ctx, "get", b.db.relationURL(collection, params), "application/json", limit)
 	if err != nil {
 		return nil, false, err

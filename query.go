@@ -27,13 +27,39 @@ const (
 
 var reJSONNumber = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
 
+// reservedFilterNames are query parameter names that PostgREST parses as
+// controls rather than filters. A filter keyed by one of them would be dropped
+// before the query is built (for example, a column named "limit" would become
+// the page size). PostgREST's official identifier quoting marks such a key as
+// a field name instead, so the constraint is kept.
+var reservedFilterNames = map[string]struct{}{
+	"select":      {},
+	"columns":     {},
+	"on_conflict": {},
+	"order":       {},
+	"limit":       {},
+	"offset":      {},
+	"and":         {},
+	"or":          {},
+}
+
+// postgrestFieldKey renders a field name used as a PostgREST filter parameter
+// key, including nested filter fields and the equality predicate of point
+// reads. Field names are restricted to simple SQL identifiers, so a reserved
+// name only needs surrounding double quotes and no escaping.
+func postgrestFieldKey(name string) string {
+	if _, reserved := reservedFilterNames[name]; reserved {
+		return `"` + name + `"`
+	}
+	return name
+}
+
 type queryPlan struct {
-	collection  string
-	params      url.Values
-	limit       int
-	offset      int
-	pageSize    int
-	idRequested bool
+	collection string
+	params     url.Values
+	limit      int
+	offset     int
+	pageSize   int
 	// projected is nil when the result columns are derived from the response
 	// (a wildcard read), and holds the requested output order otherwise.
 	projected []string
@@ -107,7 +133,7 @@ func makePlan(query dal.Query, cfg config) (queryPlan, error) {
 	}
 
 	params := url.Values{}
-	projected, idRequested, err := addProjection(params, q, cfg.idColumn, baseAlias, baseName)
+	projected, _, err := addProjection(params, q, cfg.idColumn, baseAlias, baseName)
 	if err != nil {
 		return queryPlan{}, err
 	}
@@ -127,14 +153,13 @@ func makePlan(query dal.Query, cfg config) (queryPlan, error) {
 	}
 
 	return queryPlan{
-		collection:  baseName,
-		params:      params,
-		limit:       limit,
-		offset:      offset,
-		pageSize:    pageSize,
-		idRequested: idRequested,
-		projected:   projected,
-		template:    q.IntoRecord,
+		collection: baseName,
+		params:     params,
+		limit:      limit,
+		offset:     offset,
+		pageSize:   pageSize,
+		projected:  projected,
+		template:   q.IntoRecord,
 	}, nil
 }
 
@@ -439,7 +464,9 @@ func (f *filterBuilder) comparison(value dal.Comparison, quoteStrings bool) (fie
 	if !ok || !validIdentifier(ref.Name()) || !validFieldSource(ref.Source(), f.baseAlias, f.baseName) {
 		return "", "", notSupported("filter fields must be simple SQL identifiers of the read relation")
 	}
-	field = ref.Name()
+	// A reserved PostgREST parameter name must be quoted; otherwise the whole
+	// parameter is consumed as a control and the filter silently disappears.
+	field = postgrestFieldKey(ref.Name())
 	switch value.Operator {
 	case dal.Equal:
 		literal, kind, err := f.constantLiteral(value.Right, quoteStrings)
@@ -508,7 +535,7 @@ func (f *filterBuilder) nullCondition(value dal.IsNullCondition) (field, express
 	if value.Negated() {
 		operator = "not.is.null"
 	}
-	return ref.Name(), operator, nil
+	return postgrestFieldKey(ref.Name()), operator, nil
 }
 
 // literalKind separates a rendered literal from its meaning. An empty string

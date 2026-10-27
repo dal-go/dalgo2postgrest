@@ -211,6 +211,136 @@ func TestFilterRendering(t *testing.T) {
 	}
 }
 
+func TestReservedFilterNamesAreQuoted(t *testing.T) {
+	for _, name := range []string{"select", "columns", "on_conflict", "order", "limit", "offset", "and", "or"} {
+		t.Run(name, func(t *testing.T) {
+			var query url.Values
+			server := newTestDB(t, func(w http.ResponseWriter, r *http.Request) {
+				query = r.URL.Query()
+				writeJSON(w, "[]")
+			})
+			q := dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().
+				WhereField(name, dal.Equal, 5).
+				Limit(1).
+				SelectIntoRecord(nil)
+			reader, err := server.db.ExecuteQueryToRecordsReader(context.Background(), q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = consumeRecords(t, reader)
+
+			quoted := `"` + name + `"`
+			if got := query.Get(quoted); got != "eq.5" {
+				t.Fatalf("filter on %q = %q, want eq.5 (quoted key %q missing)", name, got, quoted)
+			}
+			switch name {
+			case "select":
+				if got := query.Get("select"); got != "*" {
+					t.Fatalf("select control = %q, want *", got)
+				}
+			case "limit":
+				if got := query.Get("limit"); got != "1" {
+					t.Fatalf("limit control = %q, want 1", got)
+				}
+			case "offset":
+				if got := query.Get("offset"); got != "0" {
+					t.Fatalf("offset control = %q, want 0", got)
+				}
+			case "order":
+				if got := query.Get("order"); got != "id.asc" {
+					t.Fatalf("order control = %q, want id.asc", got)
+				}
+			default:
+				if _, exists := query[name]; exists {
+					t.Fatalf("unquoted %q parameter was sent: %v", name, query[name])
+				}
+			}
+			if got := server.hits.Load(); got != 1 {
+				t.Fatalf("requests = %d, want 1", got)
+			}
+		})
+	}
+}
+
+func TestReservedFilterNamesInNestedAndExplicitPredicates(t *testing.T) {
+	var query url.Values
+	server := newTestDB(t, func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.Query()
+		writeJSON(w, "[]")
+	})
+	q := dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().
+		Where(dal.NewGroupCondition(dal.Or,
+			dal.WhereField("limit", dal.GreaterThen, 1),
+			dal.WhereField("offset", dal.In, []int{1, 2}),
+			dal.WhereField("columns", dal.NotIn, []string{"x"}),
+			dal.NewIsNullCondition(dal.Field("select")),
+		)).
+		Where(dal.Field("or").IsNull()).
+		Where(dal.Field("and").IsNotNull()).
+		WhereField("select", dal.NotIn, []string{"x"}).
+		WhereField("order", dal.LessOrEqual, 3).
+		Limit(1).
+		SelectIntoRecord(nil)
+	reader, err := server.db.ExecuteQueryToRecordsReader(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = consumeRecords(t, reader)
+
+	if got, want := query.Get("or"), `("limit".gt.1,"offset".in.(1,2),"columns".not.in.("x"),"select".is.null)`; got != want {
+		t.Fatalf("or = %q, want %q", got, want)
+	}
+	if got := query.Get(`"or"`); got != "is.null" {
+		t.Fatalf("IS NULL on or = %q, want is.null", got)
+	}
+	if got := query.Get(`"and"`); got != "not.is.null" {
+		t.Fatalf("IS NOT NULL on and = %q, want not.is.null", got)
+	}
+	if got := query.Get(`"select"`); got != `not.in.("x")` {
+		t.Fatalf("NOT IN on select = %q", got)
+	}
+	if got := query.Get(`"order"`); got != "lte.3" {
+		t.Fatalf("range on order = %q, want lte.3", got)
+	}
+	if got := query.Get("limit"); got != "1" {
+		t.Fatalf("limit control = %q, want 1", got)
+	}
+	if got := query.Get("offset"); got != "0" {
+		t.Fatalf("offset control = %q, want 0", got)
+	}
+}
+
+func TestOrdinaryFilterNamesStayUnquoted(t *testing.T) {
+	var query url.Values
+	server := newTestDB(t, func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.Query()
+		writeJSON(w, "[]")
+	})
+	q := dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().
+		WhereField("limit_count", dal.Equal, 5).
+		WhereField("oracle", dal.Equal, "x").
+		WhereField("ordered", dal.GreaterThen, 1).
+		Limit(1).
+		SelectIntoRecord(nil)
+	reader, err := server.db.ExecuteQueryToRecordsReader(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = consumeRecords(t, reader)
+	for name, want := range map[string]string{
+		"limit_count": "eq.5",
+		"oracle":      "eq.x",
+		"ordered":     "gt.1",
+	} {
+		if got := query.Get(name); got != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
+		if _, exists := query[`"`+name+`"`]; exists {
+			t.Fatalf("ordinary field %q was quoted", name)
+		}
+	}
+}
+
 func TestNullSemantics(t *testing.T) {
 	var query url.Values
 	server := newTestDB(t, func(w http.ResponseWriter, r *http.Request) {

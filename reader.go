@@ -402,10 +402,21 @@ func (b *backend) ExecuteQueryToRecordsetReader(ctx context.Context, query dal.Q
 			return nil, err
 		}
 		for _, row := range page {
-			if !plan.idRequested {
-				delete(row, b.db.cfg.idColumn)
+			if plan.projected == nil {
+				// A wildcard read keeps every response field; its columns are
+				// derived from the rows after all pages have arrived.
+				rows = append(rows, row)
+				continue
 			}
-			rows = append(rows, row)
+			// Enforce the same declared-output contract as the records reader
+			// before materialization. Without this check a declared column that
+			// PostgREST did not return would be stored as nil, making an absent
+			// column indistinguishable from an explicit SQL NULL.
+			projectedRow, projectErr := plan.projectRow(row)
+			if projectErr != nil {
+				return nil, projectErr
+			}
+			rows = append(rows, projectedRow)
 		}
 		if done {
 			break

@@ -65,3 +65,42 @@ insert into app.labels (id, name) values
   (4, ''),
   (5, 'other'),
   (6, null);
+
+-- Physical column names that are also PostgREST query controls. Unquoted, a
+-- filter on one of these is consumed as a control and silently disappears.
+create table app.reserved_words (
+  id bigint primary key,
+  "limit" int,
+  "offset" int,
+  "select" text,
+  "columns" text,
+  "on_conflict" int,
+  "order" int,
+  "and" int,
+  "or" int,
+  ordinary int
+);
+
+alter table app.reserved_words enable row level security;
+create policy reserved_words_reader on app.reserved_words for select to app_reader using (true);
+grant select on app.reserved_words to app_reader;
+
+insert into app.reserved_words
+  (id, "limit", "offset", "select", "columns", "on_conflict", "order", "and", "or", ordinary)
+values
+  (1, 10, 100, 'alpha', 'c1', 1, 2, 3, 4, 5),
+  (2, null, 200, 'beta', 'c2', 2, null, 4, 5, 6);
+
+-- A reserved name as the configured IDColumn: point reads must quote their
+-- equality predicate instead of targeting the limit/offset control.
+create table app.reserved_ids (
+  "offset" bigint primary key,
+  "limit" bigint not null unique,
+  title text not null
+);
+
+alter table app.reserved_ids enable row level security;
+create policy reserved_ids_reader on app.reserved_ids for select to app_reader using (true);
+grant select on app.reserved_ids to app_reader;
+
+insert into app.reserved_ids ("offset", "limit", title) values (7, 70, 'seven');

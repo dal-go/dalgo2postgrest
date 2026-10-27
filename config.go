@@ -50,7 +50,9 @@ type Config struct {
 
 	// IDColumn is the unique column that carries a DALgo record ID. It defaults
 	// to "id". The relation must expose it; queries use it as the stable
-	// tie-breaker and Get/Exists filter on it.
+	// tie-breaker and Get/Exists filter on it. A name that is also a PostgREST
+	// query control ("limit", "offset", "select", ...) is quoted in the
+	// equality filter rather than colliding with that control.
 	IDColumn string
 
 	// Schema optionally selects a PostgREST schema profile with the

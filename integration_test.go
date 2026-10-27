@@ -501,6 +501,116 @@ func TestIntegration_ServerMaxRowsIsNotTruncation(t *testing.T) {
 	}
 }
 
+func TestIntegration_ReservedControlColumnNames(t *testing.T) {
+	endpoint, token := integrationReaderToken(t)
+	db := integrationDB(t, endpoint, token)
+	ctx := context.Background()
+
+	ids := func(t *testing.T, where dal.Condition) []int64 {
+		t.Helper()
+		query := dal.From(dal.NewRootCollectionRef("reserved_words", "")).NewQuery().
+			Where(where).
+			OrderBy(dal.AscendingField("id")).
+			Limit(10).
+			SelectIntoRecord(nil)
+		reader, err := db.ExecuteQueryToRecordsReader(ctx, query)
+		if err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		records := consumeRecords(t, reader)
+		ids := make([]int64, len(records))
+		for i, rec := range records {
+			ids[i] = rec.Key().ID.(int64)
+		}
+		return ids
+	}
+
+	for _, test := range []struct {
+		name  string
+		where dal.Condition
+		want  []int64
+	}{
+		{"limit equality", dal.WhereField("limit", dal.Equal, 10), []int64{1}},
+		{"offset range", dal.WhereField("offset", dal.GreaterThen, 100), []int64{2}},
+		{"offset membership", dal.WhereField("offset", dal.In, []int{100, 200}), []int64{1, 2}},
+		{"select not in", dal.WhereField("select", dal.NotIn, []string{"alpha"}), []int64{2}},
+		{"columns equality", dal.WhereField("columns", dal.Equal, "c1"), []int64{1}},
+		{"on_conflict equality", dal.WhereField("on_conflict", dal.Equal, 2), []int64{2}},
+		{"order equality", dal.WhereField("order", dal.Equal, 2), []int64{1}},
+		{"and equality", dal.WhereField("and", dal.Equal, 3), []int64{1}},
+		{"or equality", dal.WhereField("or", dal.Equal, 4), []int64{1}},
+		{"limit is null", dal.NewIsNullCondition(dal.Field("limit")), []int64{2}},
+		{"order is not null", dal.NewIsNotNullCondition(dal.Field("order")), []int64{1}},
+		{"nested or", dal.NewGroupCondition(dal.Or,
+			dal.WhereField("limit", dal.Equal, 10),
+			dal.WhereField("or", dal.Equal, 5),
+		), []int64{1, 2}},
+		{"nested or with null", dal.NewGroupCondition(dal.Or,
+			dal.WhereField("limit", dal.Equal, 10),
+			dal.NewIsNullCondition(dal.Field("order")),
+		), []int64{1, 2}},
+		{"ordinary similarly named", dal.WhereField("ordinary", dal.Equal, 5), []int64{1}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ids(t, test.where); fmt.Sprint(got) != fmt.Sprint(test.want) {
+				t.Fatalf("ids = %v, want %v", got, test.want)
+			}
+		})
+	}
+
+	t.Run("reserved projection and order", func(t *testing.T) {
+		query := dal.From(dal.NewRootCollectionRef("reserved_words", "")).NewQuery().
+			OrderBy(dal.AscendingField("order")).
+			Limit(2).
+			SelectColumns(
+				dal.Column{Expression: dal.Field("limit")},
+				dal.Column{Alias: "chosen", Expression: dal.Field("select")},
+			)
+		reader, err := db.ExecuteQueryToRecordsReader(ctx, query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		records := consumeRecords(t, reader)
+		if len(records) != 2 || records[0].Key().ID != int64(1) || records[1].Key().ID != int64(2) {
+			t.Fatalf("keys = %#v", keysOf(records))
+		}
+		data := records[0].Data().(map[string]any)
+		if data["limit"] != int64(10) || data["chosen"] != "alpha" {
+			t.Fatalf("projected data = %#v", data)
+		}
+		if _, found := data["id"]; found {
+			t.Fatalf("projection leaked the hidden id: %#v", data)
+		}
+	})
+
+	for _, test := range []struct {
+		name     string
+		idColumn string
+		key      int64
+	}{
+		{"offset id column", "offset", 7},
+		{"limit id column", "limit", 70},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reservedDB := integrationDBConfigured(t, endpoint, token, func(c *Config) {
+				c.IDColumn = test.idColumn
+			})
+			key := record.NewKeyWithID("reserved_ids", test.key)
+			rec := record.NewRecordWithData(key, map[string]any{})
+			if err := reservedDB.Get(ctx, rec); err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if got := rec.Data().(map[string]any)["title"]; got != "seven" {
+				t.Fatalf("title = %#v", got)
+			}
+			found, err := reservedDB.Exists(ctx, record.NewKeyWithID("reserved_ids", test.key))
+			if err != nil || !found {
+				t.Fatalf("Exists = %v, %v", found, err)
+			}
+		})
+	}
+}
+
 func keysOf(records []record.Record) []any {
 	keys := make([]any, len(records))
 	for i, rec := range records {

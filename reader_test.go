@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"reflect"
 	"sync"
 	"testing"
@@ -246,6 +247,14 @@ func TestRecordsProjectionHonorsDeclaredOutputs(t *testing.T) {
 			wantData:    map[string]any{"title": "seven"},
 		},
 		{
+			name:        "explicit null stays a declared value",
+			query:       titleOnly(),
+			selectValue: "title,id",
+			body:        `[{"id":7,"title":null}]`,
+			wantKey:     int64(7),
+			wantData:    map[string]any{"title": nil},
+		},
+		{
 			name:        "alias and hidden id keep only declared outputs",
 			query:       aliasAndHiddenID(),
 			selectValue: "title,q:qty,id",
@@ -315,6 +324,158 @@ func TestRecordsProjectionRejectsMissingDeclaredColumn(t *testing.T) {
 		if !errors.Is(nextErr, ErrInvalidResponse) {
 			t.Fatalf("Next %d = %v, want ErrInvalidResponse", i+1, nextErr)
 		}
+	}
+}
+
+func TestRecordsetProjectionMatchesRecordsContract(t *testing.T) {
+	t.Run("missing declared column is a protocol error", func(t *testing.T) {
+		server := newTestDB(t, jsonRows(`[{"id":7,"unexpected":"leak"}]`))
+		query := dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(1).
+			SelectColumns(dal.Column{Expression: dal.Field("title")})
+		reader, err := server.db.ExecuteQueryToRecordsetReader(context.Background(), query)
+		if reader != nil {
+			t.Fatal("a recordset reader was returned for a response without the declared title")
+		}
+		if !errors.Is(err, ErrInvalidResponse) {
+			t.Fatalf("error = %v, want ErrInvalidResponse", err)
+		}
+		if got := server.hits.Load(); got != 1 {
+			t.Fatalf("requests = %d, want 1", got)
+		}
+	})
+
+	t.Run("explicit null is a value", func(t *testing.T) {
+		server := newTestDB(t, jsonRows(`[{"id":7,"title":null}]`))
+		query := dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(1).
+			SelectColumns(dal.Column{Expression: dal.Field("title")})
+		reader, err := server.db.ExecuteQueryToRecordsetReader(context.Background(), query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rs := reader.Recordset()
+		columns := rs.Columns()
+		if len(columns) != 1 || columns[0].Name() != "title" {
+			t.Fatalf("columns = %#v, want title", columns)
+		}
+		row, _, err := reader.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, err := row.GetValueByName("title", rs)
+		if err != nil || value != nil {
+			t.Fatalf("title = %#v, %v, want an explicit nil without an error", value, err)
+		}
+	})
+
+	t.Run("alias and hidden id", func(t *testing.T) {
+		server := newTestDB(t, jsonRows(`[{"id":7,"q":10,"unexpected":"leak"}]`))
+		query := dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(1).
+			SelectColumns(dal.Column{Alias: "q", Expression: dal.Field("qty")})
+		reader, err := server.db.ExecuteQueryToRecordsetReader(context.Background(), query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rs := reader.Recordset()
+		columns := rs.Columns()
+		if len(columns) != 1 || columns[0].Name() != "q" {
+			t.Fatalf("columns = %#v, want q only", columns)
+		}
+		row, _, err := reader.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, err := row.GetValueByName("q", rs)
+		if err != nil || value != int64(10) {
+			t.Fatalf("q = %#v, %v, want int64(10)", value, err)
+		}
+	})
+
+	t.Run("id only", func(t *testing.T) {
+		server := newTestDB(t, jsonRows(`[{"id":7,"title":"leak"}]`))
+		query := dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(1).
+			SelectKeysOnly(reflect.Int64)
+		reader, err := server.db.ExecuteQueryToRecordsetReader(context.Background(), query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rs := reader.Recordset()
+		columns := rs.Columns()
+		if len(columns) != 1 || columns[0].Name() != "id" {
+			t.Fatalf("columns = %#v, want id only", columns)
+		}
+		row, _, err := reader.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, err := row.GetValueByName("id", rs)
+		if err != nil || value != int64(7) {
+			t.Fatalf("id = %#v, %v, want int64(7)", value, err)
+		}
+	})
+
+	t.Run("wildcard keeps derived columns", func(t *testing.T) {
+		server := newTestDB(t, jsonRows(`[{"id":7,"title":"seven","extra":"kept"}]`))
+		query := dal.From(dal.NewRootCollectionRef("items", "")).NewQuery().Limit(1).
+			SelectIntoRecordset()
+		reader, err := server.db.ExecuteQueryToRecordsetReader(context.Background(), query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		columns := reader.Recordset().Columns()
+		names := make([]string, len(columns))
+		for i, column := range columns {
+			names[i] = column.Name()
+		}
+		if !reflect.DeepEqual(names, []string{"extra", "id", "title"}) {
+			t.Fatalf("wildcard columns = %#v", names)
+		}
+	})
+}
+
+func TestPointReadsQuoteReservedIDColumn(t *testing.T) {
+	for _, name := range []string{"select", "columns", "on_conflict", "order", "limit", "offset", "and", "or"} {
+		t.Run(name, func(t *testing.T) {
+			var query url.Values
+			server := newTestDB(t, func(w http.ResponseWriter, r *http.Request) {
+				query = r.URL.Query()
+				writeJSON(w, `[{"`+name+`":7,"title":"seven"}]`)
+			}, func(c *Config) { c.IDColumn = name })
+			ctx := context.Background()
+
+			rec := record.NewRecordWithData(record.NewKeyWithID("items", int64(7)), map[string]any{})
+			if err := server.db.Get(ctx, rec); err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			quoted := `"` + name + `"`
+			if got := query.Get(quoted); got != "eq.7" {
+				t.Fatalf("Get equality on %q = %q, want eq.7", name, got)
+			}
+			if got := query.Get("limit"); got != "1" {
+				t.Fatalf("Get limit control = %q, want 1", got)
+			}
+			if name == "select" {
+				if got := query.Get("select"); got != "*" {
+					t.Fatalf("Get select control = %q, want *", got)
+				}
+			}
+
+			found, err := server.db.Exists(ctx, record.NewKeyWithID("items", int64(7)))
+			if err != nil || !found {
+				t.Fatalf("Exists = %v, %v", found, err)
+			}
+			if got := query.Get(quoted); got != "eq.7" {
+				t.Fatalf("Exists equality on %q = %q, want eq.7", name, got)
+			}
+			if got := query.Get("limit"); got != "1" {
+				t.Fatalf("Exists limit control = %q, want 1", got)
+			}
+			if got := query.Get("select"); got != name {
+				t.Fatalf("Exists select control = %q, want %q", got, name)
+			}
+			if got := server.hits.Load(); got != 2 {
+				t.Fatalf("requests = %d, want 2", got)
+			}
+		})
 	}
 }
 
