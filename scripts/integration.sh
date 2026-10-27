@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the opt-in integration tests against a disposable PostgreSQL 17 +
+# Runs the opt-in integration tests against a disposable PostgreSQL 18 +
 # PostgREST v16.5 project. Every run gets its own Compose project name and two
 # free loopback ports, and tears down its own containers and volume.
 set -euo pipefail
