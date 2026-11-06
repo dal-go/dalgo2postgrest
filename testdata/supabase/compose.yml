@@ -1,0 +1,78 @@
+# Minimal Supabase-style REST fixture for the dalgo2postgrest adapter:
+# PostgreSQL 18, PostgREST v16.5 and a DB-less Kong 3.9.3 gateway.
+#
+# Every image is pinned to the immutable multi-architecture index digest that
+# its tag resolved to on 2026-10-28. The human-readable tag stays for review;
+# Compose pulls the digest, so a retagged image cannot silently enter a run.
+#
+# Ownership and exposure rules this file must keep:
+#   - PostgreSQL and PostgREST publish no host port at all. They are reachable
+#     only from the Kong container on this run's own Compose network.
+#   - Kong publishes its proxy on one random loopback port the caller owns.
+#     Its admin listener is off, and it has no admin ACL member, so the exact
+#     PostgREST OpenAPI root is refused to the public fixture key.
+#   - The JWT signing secret is supplied by the caller through the environment;
+#     it is never checked in and never written to a Compose file.
+services:
+  postgres:
+    image: postgres:18@sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+    volumes:
+      - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d appdb"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
+  postgrest:
+    image: postgrest/postgrest:v16.5@sha256:1347d7552b88f17832912c06afbf7c43209af6eeeb60834b04aae12c9bd9d5cc
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:authenticator-pass@postgres:5432/appdb
+      PGRST_DB_SCHEMAS: app
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: "${SUPABASE_FIXTURE_JWT_SECRET:?SUPABASE_FIXTURE_JWT_SECRET is required}"
+      PGRST_DB_EXTRA_SEARCH_PATH: app
+      # Deliberately below the adapter's default MaxPageSize (200). A request
+      # for 200 rows is answered with 37, so the adapter must continue from
+      # Content-Range instead of treating a short page as the end.
+      PGRST_DB_MAX_ROWS: "37"
+
+  kong:
+    image: kong/kong:3.9.3@sha256:9a2ae6699a2ce0d60592eb176555d3594a22782c20cc6557a61ff3a7e8b559a3
+    depends_on:
+      postgrest:
+        condition: service_started
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/kong.yml
+      KONG_ROUTER_FLAVOR: expressions
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_DNS_NOT_FOUND_TTL: "1"
+      KONG_PLUGINS: key-auth,acl
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      # The admin API is never exposed: no listener, no host port, and no
+      # consumer in the declarative file belongs to the admin-only ACL group.
+      KONG_ADMIN_LISTEN: "off"
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_LOG_LEVEL: notice
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+    ports:
+      - "127.0.0.1:${SUPABASE_KONG_PORT:?SUPABASE_KONG_PORT is required}:8000"
+    volumes:
+      # Checked in: it carries one synthetic publishable key and no signing
+      # secret, admin token or real Supabase credential.
+      - ./kong.yml:/usr/local/kong/kong.yml:ro
