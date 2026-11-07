@@ -3,7 +3,7 @@ module github.com/dal-go/dalgo2postgrest
 go 1.27.0
 
 require (
-	github.com/dal-go/dalgo v0.102.0
+	github.com/dal-go/dalgo v0.102.1
 	github.com/dal-go/record v0.1.5
 )
 
