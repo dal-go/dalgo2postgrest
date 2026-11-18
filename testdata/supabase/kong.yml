@@ -1,0 +1,54 @@
+# DB-less Kong 3.9.3 declarative configuration for the Supabase-style fixture.
+#
+# The public fixture key is synthetic: it is not a Supabase key, an anon key of
+# any project, or a service-role key. It selects the `anon` consumer, whose ACL
+# group is `anon`.
+#
+# Two native Kong plugins do the work, with no request transformer:
+#   - The exact PostgREST OpenAPI root (`/rest/v1/`) is routed to the
+#     admin-only ACL group. No consumer belongs to `admin`, so a valid public
+#     key reaches real key-auth and then a real ACL refusal (403). Metadata is
+#     not blocked by a request-termination plugin or an injected body.
+#   - Every relation under `/rest/v1/` is routed to the `anon` ACL group.
+#     key-auth does not hide credentials, so the caller's Authorization bearer
+#     reaches PostgREST unchanged and PostgREST verifies its signature, role
+#     and expiry.
+_format_version: '2.1'
+_transform: true
+consumers:
+  - username: anon
+    keyauth_credentials:
+      - key: sb_publishable_datatug_dalgo2postgrest_fixture
+acls:
+  - consumer: anon
+    group: anon
+services:
+  - name: supabase-rest-openapi
+    url: http://postgrest:3000/
+    routes:
+      - name: supabase-rest-openapi-root
+        strip_path: true
+        expression: 'http.path == "/rest/v1/"'
+    plugins:
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow: [admin]
+  - name: supabase-rest
+    url: http://postgrest:3000/
+    routes:
+      - name: supabase-rest-all
+        strip_path: true
+        paths:
+          - /rest/v1/
+    plugins:
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow: [anon]
