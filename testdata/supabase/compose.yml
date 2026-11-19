@@ -45,7 +45,7 @@ services:
       PGRST_DB_MAX_ROWS: "37"
 
   kong:
-    image: kong/kong:3.9.3@sha256:9a2ae6699a2ce0d60592eb176555d3594a22782c20cc6557a61ff3a7e8b559a3
+    image: kong/kong:3.9.5@sha256:4bbd3148c708da48a8495bc75d86b4863e62ca056b9f22d6ff52e982a2446da1
     depends_on:
       postgrest:
         condition: service_started
