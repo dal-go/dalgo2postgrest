@@ -15,7 +15,7 @@
 #     it is never checked in and never written to a Compose file.
 services:
   postgres:
-    image: postgres:18@sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4
+    image: postgres:19@sha256:bb6e70add742cd868fb62cb3b2f67d1dd2bdd2b65a521e778420748753687c60
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
