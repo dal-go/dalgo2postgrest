@@ -161,7 +161,7 @@ func composeServiceBlocks(t *testing.T, compose string) map[string]string {
 
 func TestSupabaseKongRefusesOpenAPIRootToPublicKeyOnly(t *testing.T) {
 	kong := readFixtureFile(t, "kong.yml")
-	requireContains(t, "kong.yml", kong, `expression: 'http.path == "/rest/v1/"'`)
+	requireContains(t, "kong.yml", kong, `expression: 'http.path == "/rest/v1" || http.path == "/rest/v1/"'`)
 	requireContains(t, "kong.yml", kong, "allow: [admin]")
 	requireContains(t, "kong.yml", kong, "allow: [anon]")
 	requireContains(t, "kong.yml", kong, "key: sb_publishable_datatug_dalgo2postgrest_fixture")

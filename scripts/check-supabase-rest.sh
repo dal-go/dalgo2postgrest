@@ -302,13 +302,14 @@ say "Externally seeded: 250 visible rows, 20 hidden owner rows; SELECT-only gran
 # ---------------------------------------------------------------------------
 # Raw HTTP premises through Kong: the refusals are real, not inferred from SQL.
 # ---------------------------------------------------------------------------
-# Exact OpenAPI root: valid key reaches real key-auth + admin-only ACL and is
-# refused. A keyless root is refused by key-auth itself.
-call_api root-with-key GET "$kong_base/rest/v1/" -H "apikey: $api_key" || fail "root probe failed"
-expect_status root-with-key 403 || fail "the OpenAPI root is not refused to the public fixture key"
-call_api root-no-key GET "$kong_base/rest/v1/" || fail "keyless root probe failed"
-expect_status root-no-key 401 || fail "the OpenAPI root is not refused without an apikey"
-say "OpenAPI root: HTTP 403 with the public key, HTTP 401 without it (Kong key-auth + admin-only ACL)"
+# Both exact OpenAPI root paths must reach the same key-auth and admin-only ACL.
+for root_path in /rest/v1 /rest/v1/; do
+	call_api root-with-key GET "$kong_base$root_path" -H "apikey: $api_key" || fail "$root_path probe failed"
+	expect_status root-with-key 403 || fail "$root_path is not refused to the public fixture key"
+	call_api root-no-key GET "$kong_base$root_path" || fail "keyless $root_path probe failed"
+	expect_status root-no-key 401 || fail "$root_path is not refused without an apikey"
+done
+say "Both OpenAPI root paths: HTTP 403 with the public key, HTTP 401 without it (Kong key-auth + admin-only ACL)"
 
 call_api relation-ok GET "$kong_base/rest/v1/records?select=record_id&limit=1" \
 	-H "apikey: $api_key" -H "Authorization: Bearer $bearer" || fail "relation probe failed"
