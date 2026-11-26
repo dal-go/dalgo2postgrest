@@ -411,9 +411,9 @@ call_api missing-column GET "$kong_base/rest/v1/missing_column_probe?select=reco
 expect_status missing-column 400 || fail "a missing projected column was not a native HTTP 400"
 say "Relation reads: server cap 37, native 400 projection, refused write with row absence"
 
-# Kong's own server header is forwarded (no request transformer).
-if ! grep -qi '^server:.*kong/3.9.5' "$logs/relation-ok.headers"; then
-	fail "the gateway response does not name Kong 3.9.5"
+# Kong identifies a successful upstream response in Via.
+if ! grep -Eqi '^via:[[:blank:]]*(1\.1[[:blank:]]+)?kong/3\.9\.5[[:space:]]*$' "$logs/relation-ok.headers"; then
+	fail "the proxied response Via header does not name Kong 3.9.5"
 fi
 
 # ---------------------------------------------------------------------------
