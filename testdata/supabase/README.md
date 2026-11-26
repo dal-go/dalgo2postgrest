@@ -4,9 +4,9 @@ A disposable, owned three-service fixture for the `dalgo2postgrest` adapter:
 
 | service | pinned image | exposure |
 | --- | --- | --- |
-| `postgres` | `postgres:18@sha256:979bccf…` | no host port |
-| `postgrest` | `postgrest/postgrest:v16.5@sha256:1347d75…` | no host port |
-| `kong` | `kong/kong:3.9.3@sha256:9a2ae66…` | one random `127.0.0.1` proxy port; admin off |
+| `postgres` | `postgres:18@sha256:c699303…` | no host port |
+| `postgrest` | `postgrest/postgrest:v16.6@sha256:5ce030c…` | no host port |
+| `kong` | `kong/kong:3.9.5@sha256:4bbd314…` | one random `127.0.0.1` proxy port; admin off |
 
 Kong is the only public listener. Its declarative configuration
 (`kong.yml`) refuses the exact PostgREST OpenAPI root to the synthetic public

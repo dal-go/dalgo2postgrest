@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check-supabase-rest.sh is the actual, opt-in acceptance for the Supabase-style
-# REST fixture. It starts its own PostgreSQL 18 + PostgREST 16.5 + Kong 3.9.3
+# REST fixture. It starts its own PostgreSQL 18 + PostgREST 16.6 + Kong 3.9.5
 # Compose project, proves the externally seeded rows and the raw HTTP auth/RLS
 # premises through the owned Kong gateway, runs the source-tree integration
 # tests, runs the separate public-module consumer pinned to the published SDK,
@@ -139,7 +139,7 @@ expect_body() { # NAME PYTHON-SOURCE FILE-ARG...
 # Start the owned fixture
 # ---------------------------------------------------------------------------
 started=1
-say "starting PostgreSQL 18 + PostgREST 16.5 + Kong 3.9.3 on loopback port $kong_port"
+say "starting PostgreSQL 18 + PostgREST 16.6 + Kong 3.9.5 on loopback port $kong_port"
 "${compose[@]}" up -d >"$logs/compose-up.log" 2>&1 || {
 	sed -n '1,120p' "$logs/compose-up.log" >&2
 	fail "docker compose up failed"
@@ -192,13 +192,13 @@ python3 "$root/scripts/lib/supabase-ports.py" kong "$kong_port" "$kong_ports_jso
 postgrest_version=$("${compose[@]}" exec -T postgrest postgrest --version 2>&1) ||
 	fail "could not read the PostgREST server version"
 case "$postgrest_version" in
-	*16.5*) ;;
-	*) fail "PostgREST server version is not 16.5: $postgrest_version" ;;
+	*16.6*) ;;
+	*) fail "PostgREST server version is not 16.6: $postgrest_version" ;;
 esac
 kong_version=$("${compose[@]}" exec -T kong kong version 2>&1) || fail "could not read the Kong server version"
 case "$kong_version" in
-	*3.9.3*) ;;
-	*) fail "Kong server version is not 3.9.3: $kong_version" ;;
+	*3.9.5*) ;;
+	*) fail "Kong server version is not 3.9.5: $kong_version" ;;
 esac
 say "Servers: $postgrest_version; Kong $kong_version"
 
@@ -412,8 +412,8 @@ expect_status missing-column 400 || fail "a missing projected column was not a n
 say "Relation reads: server cap 37, native 400 projection, refused write with row absence"
 
 # Kong's own server header is forwarded (no request transformer).
-if ! grep -qi '^server:.*kong/3.9.3' "$logs/relation-ok.headers"; then
-	fail "the gateway response does not name Kong 3.9.3"
+if ! grep -qi '^server:.*kong/3.9.5' "$logs/relation-ok.headers"; then
+	fail "the gateway response does not name Kong 3.9.5"
 fi
 
 # ---------------------------------------------------------------------------

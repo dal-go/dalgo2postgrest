@@ -8,7 +8,7 @@ go 1.27.0
 // this repository's working tree.
 require (
 	github.com/dal-go/dalgo v0.102.6
-	github.com/dal-go/dalgo2postgrest v0.0.0-20261027200821-d952c8fc3279
+	github.com/dal-go/dalgo2postgrest v0.0.0-20261125224804-b228274abc23
 	github.com/dal-go/record v0.1.5
 )
 

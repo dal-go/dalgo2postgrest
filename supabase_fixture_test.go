@@ -56,9 +56,9 @@ func requireNotContains(t *testing.T, name, haystack, needle string) {
 
 func TestSupabaseFixtureImageDigestsAreImmutable(t *testing.T) {
 	want := map[string]string{
-		"postgres:18":               "sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4",
-		"postgrest/postgrest:v16.5": "sha256:1347d7552b88f17832912c06afbf7c43209af6eeeb60834b04aae12c9bd9d5cc",
-		"kong/kong:3.9.3":           "sha256:9a2ae6699a2ce0d60592eb176555d3594a22782c20cc6557a61ff3a7e8b559a3",
+		"postgres:18":               "sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b",
+		"postgrest/postgrest:v16.6": "sha256:5ce030c153500fe90ba157da4da8ba99ab51d3bc7b95e071bd0b544b67a632f7",
+		"kong/kong:3.9.5":           "sha256:4bbd3148c708da48a8495bc75d86b4863e62ca056b9f22d6ff52e982a2446da1",
 	}
 	compose := readFixtureFile(t, "compose.yml")
 	images := make(map[string]bool)
@@ -274,7 +274,7 @@ func TestSupabaseLifecycleScriptsAreRunnable(t *testing.T) {
 
 func TestSupabaseConsumerPinsPublishedModule(t *testing.T) {
 	goMod := readRepoFile(t, filepath.Join("testdata", "consumer", "go.mod"))
-	requireContains(t, "consumer go.mod", goMod, "github.com/dal-go/dalgo2postgrest v0.0.0-20261027200821-d952c8fc3279")
+	requireContains(t, "consumer go.mod", goMod, "github.com/dal-go/dalgo2postgrest v0.0.0-20261125224804-b228274abc23")
 	requireNotContains(t, "consumer go.mod", goMod, "replace ")
 	requireNotContains(t, "consumer go.mod", goMod, "=> ../")
 	requireNotContains(t, "consumer go.mod", goMod, "=> /")
@@ -305,7 +305,7 @@ func TestSupabaseIntegrationTestsAreOptIn(t *testing.T) {
 func TestExistingPostgRESTFixtureIsUnchanged(t *testing.T) {
 	compose := readRepoFile(t, filepath.Join("testdata", "docker-compose.yml"))
 	requireContains(t, "testdata/docker-compose.yml", compose, "postgres:18")
-	requireContains(t, "testdata/docker-compose.yml", compose, "postgrest/postgrest:v16.5")
+	requireContains(t, "testdata/docker-compose.yml", compose, "postgrest/postgrest:v16.6")
 	requireContains(t, "testdata/docker-compose.yml", compose, `PGRST_DB_MAX_ROWS: "3"`)
 	seed := readRepoFile(t, filepath.Join("testdata", "seed.sql"))
 	requireContains(t, "testdata/seed.sql", seed, "create table app.items")
