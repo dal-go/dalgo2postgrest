@@ -2,5 +2,38 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "dependencyDashboard": {
+    "enabled": true
+  },
+  "prConcurrentLimit": 3,
+  "branchConcurrentLimit": 3,
+  "packageRules": [
+    {
+      "description": "Review major updates in the dependency dashboard",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Update the Supabase image pins and their exact test assertions together",
+      "matchManagers": ["docker-compose"],
+      "matchFileNames": ["testdata/supabase/compose.yml"],
+      "matchPackageNames": ["postgres", "postgrest/postgrest", "kong/kong"],
+      "enabled": false
+    },
+    {
+      "description": "Keep the baseline PostgREST fixture on its explicitly tested images",
+      "matchManagers": ["docker-compose"],
+      "matchFileNames": ["testdata/docker-compose.yml"],
+      "matchPackageNames": ["postgres", "postgrest/postgrest"],
+      "enabled": false
+    },
+    {
+      "description": "Refresh the fixture module pin and its published-version assertion together",
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["testdata/consumer/go.mod"],
+      "matchPackageNames": ["github.com/dal-go/dalgo2postgrest"],
+      "enabled": false
+    }
   ]
 }
