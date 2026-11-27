@@ -3,9 +3,7 @@
   "extends": [
     "config:recommended"
   ],
-  "dependencyDashboard": {
-    "enabled": true
-  },
+  "dependencyDashboard": true,
   "prConcurrentLimit": 3,
   "branchConcurrentLimit": 3,
   "packageRules": [
