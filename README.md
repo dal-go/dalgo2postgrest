@@ -6,7 +6,7 @@ application tables and views through PostgREST's HTTP API, including Supabase's
 `/rest/v1` endpoint. It does not speak the PostgreSQL wire protocol, does not
 create a DALgo storage layout, and never writes.
 
-Tested against **PostgREST v16.5** with **PostgreSQL 18**. CI runs the adapter
+Tested against **PostgREST v16.6** with **PostgreSQL 18**. CI runs the adapter
 against that real pair on every push and pull request.
 
 ## Security and credentials
@@ -267,7 +267,7 @@ PostgREST OpenAPI document at the API root. The same header provider and
   can still list a relation whose name a query would refuse.
 - A column whose name is a PostgREST control (`limit`, `offset`, `select`,
   `order`, `or`, ...) is targeted with quoted filter keys. This is verified
-  against PostgREST v16.5; a server or proxy that rewrites or rejects quoted
+  against PostgREST v16.6; a server or proxy that rewrites or rejects quoted
   query keys fails the read instead of silently dropping the predicate.
 - Explicit projections are exact for both records and recordsets: every declared
   output column must be present in the response. An explicit JSON `null` is a
@@ -286,7 +286,7 @@ PostgREST OpenAPI document at the API root. The same header provider and
 - The adapter supports PostgREST tables/views only. RPC functions, embedding,
   full-text search, aggregates, grouping and writes are deliberately absent.
 - Hosted Supabase acceptance is a manual gate (below). The checked-in
-  integration suite proves the owned PostgREST v16.5 fixture, not a hosted
+  integration suite proves the owned PostgREST v16.6 fixture, not a hosted
   project, its JWT verifier, RLS policy or network path.
 
 ## Tests
@@ -300,7 +300,7 @@ go vet ./...
 ```
 
 The opt-in real-service suite starts a disposable PostgreSQL 18 + PostgREST
-v16.5 Compose project with random loopback ports and a unique Compose project
+v16.6 Compose project with random loopback ports and a unique Compose project
 name, seeds application rows through PostgreSQL's init hook, exercises rows,
 filters, ordering, paging, recordsets, metadata and auth failures, then removes
 its containers and volume. The fixture sets `db-max-rows=3` (below the adapter's
@@ -316,7 +316,7 @@ reserved `IDColumn` point reads against the real service.
 ```
 
 The script also verifies that the served `Server` header is
-`postgrest/16.5`, that exactly four `items` and six `labels` rows were seeded
+`postgrest/16.6`, that exactly four `items` and six `labels` rows were seeded
 externally, and that the `app_reader` role has `SELECT` but not `INSERT`. It
 fails if the integration tests skip, and it fails if teardown leaves a
 container.

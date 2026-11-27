@@ -28,7 +28,7 @@ jobs:
   # repository. The fleet release workflow is added by the repository owner
   # after an exact-head review; this CI never publishes a tag by itself.
   integration:
-    name: Real PostgREST v16.5
+    name: Real PostgREST v16.6
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -37,5 +37,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Disposable PostgreSQL 18 + PostgREST v16.5
+      - name: Disposable PostgreSQL 18 + PostgREST v16.6
         run: ./scripts/integration.sh
+      - name: Supabase fixture and published SDK
+        timeout-minutes: 12
+        env:
+          SUPABASE_SKIP_INSTALLED_CLI: "1"
+        run: ./scripts/check-supabase-rest.sh

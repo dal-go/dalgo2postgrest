@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs the opt-in integration tests against a disposable PostgreSQL 18 +
-# PostgREST v16.5 project. Every run gets its own Compose project name and two
+# PostgREST v16.6 project. Every run gets its own Compose project name and two
 # free loopback ports, and tears down its own containers and volume.
 set -euo pipefail
 
@@ -50,7 +50,7 @@ done
 
 server_header="$(curl -fsSI "http://127.0.0.1:${POSTGREST_PORT}/" | tr -d '\r' | awk 'tolower($1) == "server:" { print $2 }')"
 case "$server_header" in
-  postgrest/16.5*) ;;
+  postgrest/16.6*) ;;
   *)
     echo "unexpected PostgREST server header: ${server_header:-<missing>}" >&2
     exit 1

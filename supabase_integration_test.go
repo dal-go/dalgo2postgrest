@@ -18,8 +18,8 @@ import (
 )
 
 // These tests run against the owned Supabase-style fixture started by
-// scripts/check-supabase-rest.sh: PostgreSQL 18 and PostgREST 16.5 behind a
-// Kong 3.9.3 gateway whose declarative configuration refuses the exact
+// scripts/check-supabase-rest.sh: PostgreSQL 18 and PostgREST 16.6 behind a
+// Kong 3.9.5 gateway whose declarative configuration refuses the exact
 // OpenAPI root to the public fixture key while forwarding a scoped user bearer
 // to PostgREST. They are opt-in: without SUPABASE_TEST_KONG_URL the normal
 // hermetic suite skips them and never starts a container.

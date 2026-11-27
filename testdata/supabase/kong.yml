@@ -1,11 +1,12 @@
-# DB-less Kong 3.9.3 declarative configuration for the Supabase-style fixture.
+# DB-less Kong 3.9.5 declarative configuration for the Supabase-style fixture.
 #
 # The public fixture key is synthetic: it is not a Supabase key, an anon key of
 # any project, or a service-role key. It selects the `anon` consumer, whose ACL
 # group is `anon`.
 #
 # Two native Kong plugins do the work, with no request transformer:
-#   - The exact PostgREST OpenAPI root (`/rest/v1/`) is routed to the
+#   - Both exact forms of the PostgREST OpenAPI root (`/rest/v1` and
+#     `/rest/v1/`) are routed to the
 #     admin-only ACL group. No consumer belongs to `admin`, so a valid public
 #     key reaches real key-auth and then a real ACL refusal (403). Metadata is
 #     not blocked by a request-termination plugin or an injected body.
@@ -28,7 +29,7 @@ services:
     routes:
       - name: supabase-rest-openapi-root
         strip_path: true
-        expression: 'http.path == "/rest/v1/"'
+        expression: 'http.path == "/rest/v1" || http.path == "/rest/v1/"'
     plugins:
       - name: key-auth
         config:

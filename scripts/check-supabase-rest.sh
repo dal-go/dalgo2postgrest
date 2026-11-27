@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check-supabase-rest.sh is the actual, opt-in acceptance for the Supabase-style
-# REST fixture. It starts its own PostgreSQL 18 + PostgREST 16.5 + Kong 3.9.3
+# REST fixture. It starts its own PostgreSQL 18 + PostgREST 16.6 + Kong 3.9.5
 # Compose project, proves the externally seeded rows and the raw HTTP auth/RLS
 # premises through the owned Kong gateway, runs the source-tree integration
 # tests, runs the separate public-module consumer pinned to the published SDK,
@@ -139,7 +139,7 @@ expect_body() { # NAME PYTHON-SOURCE FILE-ARG...
 # Start the owned fixture
 # ---------------------------------------------------------------------------
 started=1
-say "starting PostgreSQL 18 + PostgREST 16.5 + Kong 3.9.3 on loopback port $kong_port"
+say "starting PostgreSQL 18 + PostgREST 16.6 + Kong 3.9.5 on loopback port $kong_port"
 "${compose[@]}" up -d >"$logs/compose-up.log" 2>&1 || {
 	sed -n '1,120p' "$logs/compose-up.log" >&2
 	fail "docker compose up failed"
@@ -192,13 +192,13 @@ python3 "$root/scripts/lib/supabase-ports.py" kong "$kong_port" "$kong_ports_jso
 postgrest_version=$("${compose[@]}" exec -T postgrest postgrest --version 2>&1) ||
 	fail "could not read the PostgREST server version"
 case "$postgrest_version" in
-	*16.5*) ;;
-	*) fail "PostgREST server version is not 16.5: $postgrest_version" ;;
+	*16.6*) ;;
+	*) fail "PostgREST server version is not 16.6: $postgrest_version" ;;
 esac
 kong_version=$("${compose[@]}" exec -T kong kong version 2>&1) || fail "could not read the Kong server version"
 case "$kong_version" in
-	*3.9.3*) ;;
-	*) fail "Kong server version is not 3.9.3: $kong_version" ;;
+	*3.9.5*) ;;
+	*) fail "Kong server version is not 3.9.5: $kong_version" ;;
 esac
 say "Servers: $postgrest_version; Kong $kong_version"
 
@@ -302,13 +302,14 @@ say "Externally seeded: 250 visible rows, 20 hidden owner rows; SELECT-only gran
 # ---------------------------------------------------------------------------
 # Raw HTTP premises through Kong: the refusals are real, not inferred from SQL.
 # ---------------------------------------------------------------------------
-# Exact OpenAPI root: valid key reaches real key-auth + admin-only ACL and is
-# refused. A keyless root is refused by key-auth itself.
-call_api root-with-key GET "$kong_base/rest/v1/" -H "apikey: $api_key" || fail "root probe failed"
-expect_status root-with-key 403 || fail "the OpenAPI root is not refused to the public fixture key"
-call_api root-no-key GET "$kong_base/rest/v1/" || fail "keyless root probe failed"
-expect_status root-no-key 401 || fail "the OpenAPI root is not refused without an apikey"
-say "OpenAPI root: HTTP 403 with the public key, HTTP 401 without it (Kong key-auth + admin-only ACL)"
+# Both exact OpenAPI root paths must reach the same key-auth and admin-only ACL.
+for root_path in /rest/v1 /rest/v1/; do
+	call_api root-with-key GET "$kong_base$root_path" -H "apikey: $api_key" || fail "$root_path probe failed"
+	expect_status root-with-key 403 || fail "$root_path is not refused to the public fixture key"
+	call_api root-no-key GET "$kong_base$root_path" || fail "keyless $root_path probe failed"
+	expect_status root-no-key 401 || fail "$root_path is not refused without an apikey"
+done
+say "Both OpenAPI root paths: HTTP 403 with the public key, HTTP 401 without it (Kong key-auth + admin-only ACL)"
 
 call_api relation-ok GET "$kong_base/rest/v1/records?select=record_id&limit=1" \
 	-H "apikey: $api_key" -H "Authorization: Bearer $bearer" || fail "relation probe failed"
@@ -411,9 +412,9 @@ call_api missing-column GET "$kong_base/rest/v1/missing_column_probe?select=reco
 expect_status missing-column 400 || fail "a missing projected column was not a native HTTP 400"
 say "Relation reads: server cap 37, native 400 projection, refused write with row absence"
 
-# Kong's own server header is forwarded (no request transformer).
-if ! grep -qi '^server:.*kong/3.9.3' "$logs/relation-ok.headers"; then
-	fail "the gateway response does not name Kong 3.9.3"
+# Kong identifies a successful upstream response in Via.
+if ! grep -Eqi '^via:[[:blank:]]*(1\.1[[:blank:]]+)?kong/3\.9\.5[[:space:]]*$' "$logs/relation-ok.headers"; then
+	fail "the proxied response Via header does not name Kong 3.9.5"
 fi
 
 # ---------------------------------------------------------------------------

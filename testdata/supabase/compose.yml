@@ -1,5 +1,5 @@
 # Minimal Supabase-style REST fixture for the dalgo2postgrest adapter:
-# PostgreSQL 18, PostgREST v16.5 and a DB-less Kong 3.9.3 gateway.
+# PostgreSQL 18, PostgREST v16.6 and a DB-less Kong 3.9.5 gateway.
 #
 # Every image is pinned to the immutable multi-architecture index digest that
 # its tag resolved to on 2026-10-28. The human-readable tag stays for review;
@@ -15,7 +15,7 @@
 #     it is never checked in and never written to a Compose file.
 services:
   postgres:
-    image: postgres:18@sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4
+    image: postgres:18@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -29,7 +29,7 @@ services:
       retries: 60
 
   postgrest:
-    image: postgrest/postgrest:v16.5@sha256:1347d7552b88f17832912c06afbf7c43209af6eeeb60834b04aae12c9bd9d5cc
+    image: postgrest/postgrest:v16.6@sha256:5ce030c153500fe90ba157da4da8ba99ab51d3bc7b95e071bd0b544b67a632f7
     depends_on:
       postgres:
         condition: service_healthy
@@ -45,7 +45,7 @@ services:
       PGRST_DB_MAX_ROWS: "37"
 
   kong:
-    image: kong/kong:3.9.3@sha256:9a2ae6699a2ce0d60592eb176555d3594a22782c20cc6557a61ff3a7e8b559a3
+    image: kong/kong:3.9.5@sha256:4bbd3148c708da48a8495bc75d86b4863e62ca056b9f22d6ff52e982a2446da1
     depends_on:
       postgrest:
         condition: service_started
